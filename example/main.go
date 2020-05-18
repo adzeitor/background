@@ -1,7 +1,3 @@
-# background
-Convert go handler to background job
-
-```go
 package main
 
 import (
@@ -17,11 +13,9 @@ import (
 )
 
 func slowHandler(w http.ResponseWriter, _ *http.Request) {
-	for i := 0; i < 10; i++ {
-		time.Sleep(time.Second * 1)
-	}
+	time.Sleep(time.Second * 10)
 	log.Println("Completed")
-	w.Write([]byte("Completed"))
+	_, _ = w.Write([]byte("Completed"))
 }
 
 func allJobsHandler(service *inmemory.Service) http.HandlerFunc {
@@ -31,13 +25,13 @@ func allJobsHandler(service *inmemory.Service) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		json.NewEncoder(w).Encode(job)
+		_ = json.NewEncoder(w).Encode(job)
 	}
 }
 
 func main() {
-	logger := log.New(os.Stdout, "jobs:", log.LstdFlags)
 	service := inmemory.New()
+	logger := log.New(os.Stdout, "jobs:", log.LstdFlags)
 	bg := background.NewMiddleware(service, logger)
 
 	asyncSlowHandler := bg.InBackground(http.HandlerFunc(slowHandler), "SLOW_HANDLER")
@@ -49,4 +43,3 @@ func main() {
 	fmt.Println("to track jobs use http://localhost:3000/jobs")
 	log.Fatal(http.ListenAndServe(":3000", nil))
 }
-```
