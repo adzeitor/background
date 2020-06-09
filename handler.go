@@ -126,7 +126,7 @@ func (bg *Background) superviseJob(ctx context.Context, job Job) {
 
 func jobStartedResponse(w http.ResponseWriter, job Job) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusAccepted)
 
 	response := struct {
 		ID string `json:"id"`

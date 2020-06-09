@@ -3,6 +3,7 @@ package background
 import (
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 
@@ -36,8 +37,14 @@ func TestBackground_InBackground(t *testing.T) {
 	}
 
 	backgroundHandler := bg.InBackground(http.HandlerFunc(handler), "testkind")
-	gotBody := assert.HTTPBody(backgroundHandler.ServeHTTP, "GET", "/", nil)
-	assert.JSONEq(t, `{"id":"6d1ed4de-a8cc-42b8-a743-6713a93626d0"}`, gotBody)
+
+	w := httptest.NewRecorder()
+	req, err := http.NewRequest("GET", "/", nil)
+	assert.NoError(t, err)
+	backgroundHandler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusAccepted, w.Code)
+	assert.JSONEq(t, `{"id":"6d1ed4de-a8cc-42b8-a743-6713a93626d0"}`, w.Body.String())
 }
 
 func TestBackground_goroutineExecutor(t *testing.T) {
