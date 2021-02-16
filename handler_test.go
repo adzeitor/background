@@ -1,6 +1,7 @@
 package background
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -59,4 +60,30 @@ func TestBackground_goroutineExecutor(t *testing.T) {
 
 	bg.goroutineExecutor(handler)
 	wg.Wait()
+}
+
+func Test_cloneRequest(t *testing.T) {
+	t.Run("context should preserve values", func(t *testing.T) {
+		key := "key"
+		ctx := context.WithValue(context.Background(), key, 42)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
+		assert.NoError(t, err)
+
+		cloned, err := cloneRequest(req)
+		assert.NoError(t, err)
+
+		assert.Equal(t, 42, cloned.Context().Value(key))
+	})
+
+	t.Run("cancellation context should not affect cloned request", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
+		assert.NoError(t, err)
+
+		cloned, err := cloneRequest(req)
+		assert.NoError(t, err)
+
+		cancel()
+		assert.NoError(t, cloned.Context().Err())
+	})
 }
