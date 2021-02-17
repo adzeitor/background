@@ -137,7 +137,7 @@ func jobStartedResponse(w http.ResponseWriter, job Job) error {
 }
 
 func cloneRequest(r *http.Request) (*http.Request, error) {
-	clonedRequest := r.Clone(r.Context())
+	clonedRequest := r.Clone(WithNoCancelContext(r.Context()))
 	if r.Body != nil {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
