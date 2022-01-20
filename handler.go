@@ -87,11 +87,7 @@ func (bg *Background) serve(
 	r *http.Request,
 	origHandler http.Handler,
 ) error {
-	// FIXME: It should be r.Context() instead of new context.Background, but
-	// original context probably will be closed, because serve of original
-	// request is completed. Which can lead to immediately closing of superviseJob.
-	// Maybe implementing ContextWithoutDone will fix this issue.
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	go bg.superviseJob(ctx, job)
 
