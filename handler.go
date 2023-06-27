@@ -12,8 +12,9 @@ import (
 
 // Background converts handlers to background handlers.
 type Background struct {
-	Service JobService
-	Logger  Logger
+	Service      JobService
+	Logger       Logger
+	PingInterval time.Duration
 
 	executor func(func() error)
 }
@@ -35,8 +36,9 @@ type Logger interface {
 // Currently all handlers executed in goroutines.
 func NewMiddleware(service JobService, logger Logger) *Background {
 	bg := &Background{
-		Service: service,
-		Logger:  logger,
+		Service:      service,
+		Logger:       logger,
+		PingInterval: 5 * time.Second,
 	}
 	bg.executor = bg.goroutineExecutor
 	return bg
@@ -105,7 +107,7 @@ func (bg *Background) serve(
 }
 
 func (bg *Background) superviseJob(ctx context.Context, job Job) {
-	tick := time.NewTicker(5 * time.Second)
+	tick := time.NewTicker(bg.PingInterval)
 	defer tick.Stop()
 	for {
 		select {
