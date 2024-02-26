@@ -12,8 +12,9 @@ import (
 
 // Background converts handlers to background handlers.
 type Background struct {
-	Service JobService
-	Logger  Logger
+	Service      JobService
+	Logger       Logger
+	PingInterval time.Duration
 
 	executor func(func() error)
 }
@@ -35,8 +36,9 @@ type Logger interface {
 // Currently all handlers executed in goroutines.
 func NewMiddleware(service JobService, logger Logger) *Background {
 	bg := &Background{
-		Service: service,
-		Logger:  logger,
+		Service:      service,
+		Logger:       logger,
+		PingInterval: 5 * time.Second,
 	}
 	bg.executor = bg.goroutineExecutor
 	return bg
@@ -87,25 +89,27 @@ func (bg *Background) serve(
 	r *http.Request,
 	origHandler http.Handler,
 ) error {
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-	go bg.superviseJob(ctx, job)
+	supervisorCtx, supervisorCancel := context.WithCancel(r.Context())
+	defer supervisorCancel()
+	go bg.superviseJob(supervisorCtx, job)
 
 	recorder := httptest.NewRecorder()
 	origHandler.ServeHTTP(recorder, r)
 
 	result := recorder.Result()
 	response, err := newResponse(result)
+	// make sure that ping job is completed
+	supervisorCancel()
 	if err != nil {
 		// FIXME: default parameters is no good...
 		// Maybe JobFailed method?
-		return bg.Service.JobCompleted(ctx, job.ID, Response{})
+		return bg.Service.JobCompleted(r.Context(), job.ID, Response{})
 	}
-	return bg.Service.JobCompleted(ctx, job.ID, response)
+	return bg.Service.JobCompleted(r.Context(), job.ID, response)
 }
 
 func (bg *Background) superviseJob(ctx context.Context, job Job) {
-	tick := time.NewTicker(5 * time.Second)
+	tick := time.NewTicker(bg.PingInterval)
 	defer tick.Stop()
 	for {
 		select {

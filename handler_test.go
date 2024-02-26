@@ -7,45 +7,89 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestBackground_InBackground(t *testing.T) {
-	jobID := "6d1ed4de-a8cc-42b8-a743-6713a93626d0"
-	wantBody := "job result: 0x3333"
-	service := newServiceMock(t)
-	service.jobStarted = func(kind string) (Job, error) {
-		return Job{ID: jobID}, nil
-	}
-	service.jobCompleted = func(id string, response Response) error {
-		assert.Equal(t, jobID, id)
-		assert.Equal(t, wantBody, response.Body)
-		return nil
-	}
-	service.ping = func(id string) error {
-		assert.Equal(t, jobID, id)
-		return nil
-	}
+	t.Run("success", func(t *testing.T) {
+		jobID := "6d1ed4de-a8cc-42b8-a743-6713a93626d0"
+		wantBody := "job result: 0x3333"
+		service := newServiceMock(t)
+		service.jobStarted = func(kind string) (Job, error) {
+			return Job{ID: jobID}, nil
+		}
+		service.jobCompleted = func(id string, response Response) error {
+			assert.Equal(t, jobID, id)
+			assert.Equal(t, wantBody, response.Body)
+			return nil
+		}
+		service.ping = func(id string) error {
+			assert.Equal(t, jobID, id)
+			return nil
+		}
 
-	bg := NewMiddleware(service, &log.Logger{})
-	bg.executor = func(handler func() error) {
-		_ = handler()
-	}
+		bg := NewMiddleware(service, &log.Logger{})
+		bg.executor = func(handler func() error) {
+			_ = handler()
+		}
 
-	handler := func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(wantBody))
-	}
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(wantBody))
+		}
 
-	backgroundHandler := bg.InBackground(http.HandlerFunc(handler), "testkind")
+		backgroundHandler := bg.InBackground(http.HandlerFunc(handler), "testkind")
 
-	w := httptest.NewRecorder()
-	req, err := http.NewRequest("GET", "/", nil)
-	assert.NoError(t, err)
-	backgroundHandler.ServeHTTP(w, req)
+		w := httptest.NewRecorder()
+		req, err := http.NewRequest("GET", "/", nil)
+		assert.NoError(t, err)
+		backgroundHandler.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusAccepted, w.Code)
-	assert.JSONEq(t, `{"id":"6d1ed4de-a8cc-42b8-a743-6713a93626d0"}`, w.Body.String())
+		assert.Equal(t, http.StatusAccepted, w.Code)
+		assert.JSONEq(t, `{"id":"6d1ed4de-a8cc-42b8-a743-6713a93626d0"}`, w.Body.String())
+	})
+
+	// this test is struggle to reproduce bug, but
+	// with proper fix it should not be false positive.
+	t.Run("should not ping after complete (last call always completed)", func(t *testing.T) {
+		// arrange
+		service := newServiceMock(t)
+		calls := []string{}
+		service.jobStarted = func(kind string) (Job, error) {
+			calls = append(calls, "started")
+			return Job{ID: "6d1ed4de-a8cc-42b8-a743-6713a93626d0"}, nil
+		}
+		waitForFirstPing := make(chan bool)
+		service.jobCompleted = func(id string, response Response) error {
+			calls = append(calls, "completed")
+			return nil
+		}
+		service.ping = func(id string) error {
+			waitForFirstPing <- true
+			calls = append(calls, "ping")
+			return nil
+		}
+		bg := NewMiddleware(service, &log.Logger{})
+		bg.PingInterval = time.Microsecond
+		bg.executor = func(handler func() error) {
+			_ = handler()
+		}
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			<-waitForFirstPing
+			_, _ = w.Write([]byte("body"))
+		}
+		backgroundHandler := bg.InBackground(http.HandlerFunc(handler), "testkind")
+		w := httptest.NewRecorder()
+
+		// act
+		req, err := http.NewRequest("GET", "/", nil)
+		assert.NoError(t, err)
+		backgroundHandler.ServeHTTP(w, req)
+
+		// assert
+		assert.Equal(t, "completed", calls[len(calls)-1], "completed should always be the last %v", calls)
+	})
 }
 
 func TestBackground_goroutineExecutor(t *testing.T) {
