@@ -45,7 +45,7 @@ func NewMiddleware(service JobService, logger Logger) *Background {
 }
 
 // InBackground converts handler to background handler.
-// It respond immediately with job ID that can be used to track
+// It responds immediately with job ID that can be used to track
 // status and getting response.
 func (bg *Background) InBackground(
 	origHandler http.Handler,
