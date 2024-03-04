@@ -91,12 +91,14 @@ func (bg *Background) serve(
 ) error {
 	supervisorCtx, supervisorCancel := context.WithCancel(r.Context())
 	defer supervisorCancel()
-	go bg.superviseJob(supervisorCtx, job)
+	pingDoneCh := make(chan struct{})
+	go bg.superviseJob(supervisorCtx, pingDoneCh, job)
 
 	recorder := httptest.NewRecorder()
 	origHandler.ServeHTTP(recorder, r)
-	// make sure that ping job is completed
+	// make sure that ping job is completed to prevent races between ping and complete.
 	supervisorCancel()
+	<-pingDoneCh
 
 	result := recorder.Result()
 	response, err := newResponse(result)
@@ -108,9 +110,12 @@ func (bg *Background) serve(
 	return bg.Service.JobCompleted(r.Context(), job.ID, response)
 }
 
-func (bg *Background) superviseJob(ctx context.Context, job Job) {
+func (bg *Background) superviseJob(ctx context.Context, doneCh chan struct{}, job Job) {
 	tick := time.NewTicker(bg.PingInterval)
-	defer tick.Stop()
+	defer func() {
+		tick.Stop()
+		close(doneCh)
+	}()
 	for {
 		select {
 		case <-tick.C:
