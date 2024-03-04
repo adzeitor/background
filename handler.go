@@ -45,7 +45,7 @@ func NewMiddleware(service JobService, logger Logger) *Background {
 }
 
 // InBackground converts handler to background handler.
-// It respond immediately with job ID that can be used to track
+// It responds immediately with job ID that can be used to track
 // status and getting response.
 func (bg *Background) InBackground(
 	origHandler http.Handler,
@@ -91,15 +91,17 @@ func (bg *Background) serve(
 ) error {
 	supervisorCtx, supervisorCancel := context.WithCancel(r.Context())
 	defer supervisorCancel()
-	go bg.superviseJob(supervisorCtx, job)
+	pingDoneCh := make(chan struct{})
+	go bg.superviseJob(supervisorCtx, pingDoneCh, job)
 
 	recorder := httptest.NewRecorder()
 	origHandler.ServeHTTP(recorder, r)
+	// make sure that ping job is completed to prevent races between ping and complete.
+	supervisorCancel()
+	<-pingDoneCh
 
 	result := recorder.Result()
 	response, err := newResponse(result)
-	// make sure that ping job is completed
-	supervisorCancel()
 	if err != nil {
 		// FIXME: default parameters is no good...
 		// Maybe JobFailed method?
@@ -108,9 +110,12 @@ func (bg *Background) serve(
 	return bg.Service.JobCompleted(r.Context(), job.ID, response)
 }
 
-func (bg *Background) superviseJob(ctx context.Context, job Job) {
+func (bg *Background) superviseJob(ctx context.Context, doneCh chan struct{}, job Job) {
 	tick := time.NewTicker(bg.PingInterval)
-	defer tick.Stop()
+	defer func() {
+		tick.Stop()
+		close(doneCh)
+	}()
 	for {
 		select {
 		case <-tick.C:
