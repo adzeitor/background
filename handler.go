@@ -95,11 +95,11 @@ func (bg *Background) serve(
 
 	recorder := httptest.NewRecorder()
 	origHandler.ServeHTTP(recorder, r)
+	// make sure that ping job is completed
+	supervisorCancel()
 
 	result := recorder.Result()
 	response, err := newResponse(result)
-	// make sure that ping job is completed
-	supervisorCancel()
 	if err != nil {
 		// FIXME: default parameters is no good...
 		// Maybe JobFailed method?
