@@ -67,6 +67,7 @@ func TestBackground_InBackground(t *testing.T) {
 		}
 		service.ping = func(id string) error {
 			waitForFirstPing <- true
+			time.Sleep(time.Second)
 			calls = append(calls, "ping")
 			return nil
 		}
@@ -88,6 +89,7 @@ func TestBackground_InBackground(t *testing.T) {
 		backgroundHandler.ServeHTTP(w, req)
 
 		// assert
+		assert.True(t, len(calls) >= 3, "there should be at least 3 calls: started, ping(1..N), completed", calls)
 		assert.Equal(t, "completed", calls[len(calls)-1], "completed should always be the last %v", calls)
 	})
 }
